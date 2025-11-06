@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Among Us Coding Challenge</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        :root {
+            --primary-bg: #111827; /* Very Dark Blue-Gray - Outer space/ship background */
+            --secondary-bg: #1f2937; /* Dark Gray - Ship Hull */
+            --path-color: #4b5563; /* Medium Gray - Path */
+            --text-color: #f3f4f6; /* Light Gray */
+            --accent-color: #ef4444; /* Red (Player) */
+            --complete-color: #10b981; /* Green */
+            --player-size: 25px;
+
+            /* New Difficulty Colors */
+            --easy-color: #34d399; /* Tailwind green-400 */
+            --medium-color: #f97316; /* Tailwind orange-600 */
+            --hard-color: #ef4444; /* Tailwind red-500 (Same as accent, but used for room) */
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--primary-bg);
+            color: var(--text-color);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            padding: 1rem;
+        }
+
+        /* The Map container styles - setting the canvas-like area */
+        #map-container {
+            position: relative;
+            background-color: var(--secondary-bg);
+            border: 4px solid #4b5563;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
+            margin: 0 auto;
+            /* Responsive sizing based on viewport width */
+            width: 90vw;
+            max-width: 900px;
+            aspect-ratio: 16 / 9; /* Maintain an aspect ratio */
+            border-radius: 12px;
+            /* Subtle inner glow for ship ambiance */
+            overflow: hidden; 
+        }
+
+        .room {
+            position: absolute;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6);
+            font-weight: bold;
+            font-size: 0.8rem;
+            color: #1f2937; /* Dark text inside rooms */
+            border: 3px solid rgba(255, 255, 255, 0.1); /* Subtle light border */
+            z-index: 7; /* CRITICAL: Ensure rooms are visible over paths */
+        }
+        
+        /* Apply the custom colors from JS to the rooms */
+        .room.easy-room { background-color: var(--easy-color); }
+        .room.medium-room { background-color: var(--medium-color); }
+        .room.hard-room { background-color: var(--hard-color); }
+        
+        /* Make rooms look distinct from paths */
+        .room:not(.completed) {
+            /* Add a subtle metallic look using gradient - Removed as we now use solid colors for difficulty */
+            /* Replaced with a subtle darker background if no specific color is applied */
+            background-image: none; 
+        }
+
+        .room.completed {
+            background-color: var(--complete-color) !important;
+            border: 3px solid #059669;
+            box-shadow: 0 0 15px var(--complete-color), inset 0 0 8px #059669;
+            color: #1f2937; 
+        }
+
+        /* Player Sprite (CSS-based Among Us style character) */
+        #player {
+            position: absolute;
+            width: var(--player-size);
+            height: var(--player-size);
+            background-color: var(--accent-color);
+            /* Rounded shape for body */
+            border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+            transition: transform 0.1s linear, left 0.1s linear, top 0.1s linear; 
+            box-shadow: 0 0 10px var(--accent-color);
+            z-index: 10;
+            
+            /* Add 'Backpack' by extending the body visual slightly */
+            box-sizing: border-box;
+            overflow: visible; 
+            
+            /* Base centering and prevent player from rotating */
+            transform: translate(-50%, -50%); 
+        }
+        
+        /* Visor/Directional Indicator (using a pseudo-element) */
+        #player::before,
+        #player.facing-right::before {
+            content: '';
+            position: absolute;
+            top: 25%;
+            left: 55%; /* Default position for facing right */
+            width: 40%;
+            height: 30%;
+            background-color: #a0c9f1; /* Light blue visor */
+            border-radius: 30%;
+            box-shadow: inset 0 0 3px rgba(0, 0, 0, 0.5);
+            transition: left 0.1s linear, transform 0.1s linear;
+        }
+
+        /* Directional class: Flip the visor for left movement */
+        #player.facing-left::before {
+            left: 5%; 
+            /* Flips the visor shape without needing a second image */
+            transform: scaleX(-1); 
+        }
+        #player.facing-bottom::before {
+            left: 30%;
+            top: 6px; 
+            /* Flips the visor shape without needing a second image */
+            transform: scaleX(-1); 
+        }
+        #player.facing-top::before {
+            left: 30%;
+            top: -1px; 
+            /* Flips the visor shape without needing a second image */
+            transform: scaleX(-1); 
+        }
+
+        /* Path Styling: Give paths some depth and separation */
+        .path {
+            position: absolute;
+            background-color: var(--path-color);
+            border: 1px solid #6b7280;
+            z-index: 5; 
+            border-radius: 4px; 
+            box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.5);
+        }
+
+        /* Modal Backdrop */
+        .modal-backdrop {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(5px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body class="p-4 sm:p-8">
+
+    <header class="mb-6 flex justify-between items-center bg-secondary-bg p-4 rounded-lg shadow-xl">
+        <div id="task-status" class="text-lg font-bold">
+            <i class="fas fa-check-circle text-gray-400 mr-2"></i>
+            Tasks: <span id="completed-tasks">0</span> / <span id="total-tasks">8</span>
+        </div>
+        <h1 class="text-3xl sm:text-4xl font-black text-accent-color tracking-wider text-center">
+            Among Us <span class="text-complete-color">Coding</span> Challenge
+        </h1>
+        <div class="w-20"></div> 
+    </header>
+
+    <div class="flex justify-center items-center gap-4 mb-4 p-3 bg-secondary-bg rounded-lg shadow-md max-w-lg mx-auto">
+        <span class="font-bold text-lg">Difficulty Legend:</span>
+        <div class="flex items-center gap-2">
+            <div class="w-4 h-4 rounded-full" style="background-color: var(--easy-color);"></div>
+            <span class="text-sm text-gray-300">Easy (3)</span>
+        </div>
+        <div class="flex items-center gap-2">
+            <div class="w-4 h-4 rounded-full" style="background-color: var(--medium-color);"></div>
+            <span class="text-sm text-gray-300">Medium (3)</span>
+        </div>
+        <div class="flex items-center gap-2">
+            <div class="w-4 h-4 rounded-full" style="background-color: var(--hard-color);"></div>
+            <span class="text-sm text-gray-300">Hard (2)</span>
+        </div>
+    </div>
+    <main class="flex-grow flex justify-center items-center p-2">
+        <div id="map-container">
+            <div id="player"></div>
+        </div>
+    </main>
+
+    <div id="task-modal" class="modal-backdrop hidden">
+        <div class="bg-secondary-bg p-6 rounded-xl shadow-2xl w-11/12 max-w-lg border-2 border-accent-color relative">
+            <h2 id="modal-title" class="text-2xl font-bold mb-4 text-accent-color">Task: Room Name</h2>
+            <p class="text-gray-300 mb-4">You have entered the room. Complete the task and return with the unique completion code.</p>
+
+            <a id="task-link" href="#" target="_blank" class="block w-full text-center bg-blue-700 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg transition duration-200 mb-6 rounded-md">
+                <i class="fas fa-external-link-alt mr-2"></i> GO TO CODING TASK
+            </a>
+
+            <div class="space-y-4">
+                <label for="completion-code" class="block text-gray-300 font-semibold">Enter Completion Code:</label>
+                <input type="text" id="completion-code" placeholder="Enter the code received after completing the task" class="w-full p-3 rounded-lg bg-gray-700 text-white border border-gray-600 focus:border-complete-color focus:ring focus:ring-complete-color focus:ring-opacity-50">
+                <button id="submit-code" style="color: white;" class="w-full bg-complete-color hover:bg-green-600 text-gray-900 font-extrabold py-3 rounded-lg transition duration-200 rounded-md">
+                    SUBMIT CODE
+                </button>
+            </div>
+            <div id="modal-message" class="mt-4 text-center font-bold"></div>
+
+            <button onclick="hideTaskModal()" class="absolute top-3 right-3 text-gray-400 hover:text-white text-2xl">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+    </div>
+
+    <div id="message-box" class="fixed bottom-4 right-4 p-4 rounded-lg shadow-xl text-center transition-opacity duration-300 opacity-0 pointer-events-none z-2000"></div>
+
+    <script>
+        // --- GAME CONSTANTS ---
+        const MOVEMENT_SPEED = 10; // Pixels per key press
+
+        // New difficulty-based color classes
+        const DIFFICULTY_COLORS = {
+            easy: 'easy-room',
+            medium: 'medium-room',
+            hard: 'hard-room'
+        };
+
+        // Room definitions (x, y, width, height are percentages of the map-container)
+        // Updated to include 'difficulty' and use the new color classes
+        const ALL_ROOMS = {
+            electrics: { x: 5, y: 35, w: 15, h: 25, difficulty: 'Sequence Words', color: DIFFICULTY_COLORS.easy, code: '8958', name: "Electrics", link : "https://www.hackerrank.com/contests/amongcoderse3/challenges"},
+            shields: { x: 25, y: 5, w: 12, h: 18, difficulty: 'Count Vowels', color: DIFFICULTY_COLORS.easy, code: '7584', name: "Shields", link : "https://www.hackerrank.com/contests/amongcoderse1/challenges" },
+            weapons: { x: 55, y: 5, w: 12, h: 18, difficulty: 'Count vowel strings in Range', color: DIFFICULTY_COLORS.medium, code: '9685', name: "Weapons", link : "https://www.hackerrank.com/contests/amongcodersm2/challenges" },
+            navigation: { x: 75, y: 35, w: 15, h: 25, difficulty: 'Reverse String', color: DIFFICULTY_COLORS.easy, code: '2654', name: "Navigation", link : "https://www.hackerrank.com/contests/amongcoderse2/challenges" },
+            cafeteria: { x: 5, y: 70, w: 18, h: 25, difficulty: 'Rotate Image', color: DIFFICULTY_COLORS.hard, code: '8543', name: "Cafeteria", link : "https://www.hackerrank.com/contests/amongcodersh2/challenges" },
+            storage: { x: 30, y: 70, w: 15, h: 20, difficulty: 'String to Integer', color: DIFFICULTY_COLORS.medium, code: '1278', name: "Storage", link : "https://www.hackerrank.com/contests/amongcodersm3/challenges" },
+            communications: { x: 55, y: 75, w: 10, h: 15, difficulty: 'Count Prime', color: DIFFICULTY_COLORS.medium, code: '9317', name: "Comms", link : "https://www.hackerrank.com/contests/amongcodersm1/challenges" },
+            upper_engine: { x: 70, y: 65, w: 20, h: 30, difficulty: 'Count and Say', color: DIFFICULTY_COLORS.hard, code: '1718', name: "Upper Engine", link : "https://www.hackerrank.com/contests/amongcodersh1/challenges" }
+        };
+
+        // Simulated paths
+        const PATHS = [
+            // Vertical paths
+            { x: 15, y: 5, w: 5, h: 90 },
+            { x: 35, y: 5, w: 5, h: 80 },
+            { x: 65, y: 5, w: 5, h: 80 },
+            { x: 85, y: 5, w: 5, h: 90 },
+            // Horizontal paths
+            { x: 15, y: 15, w: 70, h: 5 },
+            { x: 5, y: 50, w: 90, h: 5 },
+            { x: 5, y: 80, w: 90, h: 5 },
+        ];
+
+
+        // --- GAME STATE VARIABLES ---
+        // Local state to track task completion. Resets on page refresh.
+        let tasksState = {}; // { 'electrics': false, 'shields': false, ... }
+        let currentPlayerRoom = null;
+        let playerElement;
+        let mapContainer;
+        let playerX = 50; // Initial position (center of map container in percentage)
+        let playerY = 50; // Initial position (center of map container in percentage)
+        let totalTasks = Object.keys(ALL_ROOMS).length;
+        let isModalOpen = false;
+
+        // --- GAME INITIALIZATION ---
+
+        function initGame() {
+            mapContainer = document.getElementById('map-container');
+            playerElement = document.getElementById('player');
+
+            initializeLocalTasks(); // Setup local state
+            createMapElements();
+            initializePlayerPosition();
+            setupEventListeners();
+        }
+
+        function initializeLocalTasks() {
+            // Set all tasks to not complete initially
+            Object.keys(ALL_ROOMS).forEach(key => {
+                tasksState[key] = false;
+            });
+            updateTaskCounter(0);
+            updateMapVisuals(Object.keys(ALL_ROOMS));
+        }
+
+        function createMapElements() {
+            // 1. Add paths
+            PATHS.forEach((path) => {
+                const pathEl = document.createElement('div');
+                pathEl.className = 'path';
+                pathEl.style.left = `${path.x}%`;
+                pathEl.style.top = `${path.y}%`;
+                pathEl.style.width = `${path.w}%`;
+                pathEl.style.height = `${path.h}%`;
+                mapContainer.appendChild(pathEl);
+            });
+
+            // 2. Add rooms
+            Object.keys(ALL_ROOMS).forEach(key => {
+                const roomData = ALL_ROOMS[key];
+                const roomEl = document.createElement('div');
+                roomEl.id = `room-${key}`;
+                // Apply the difficulty color class
+                roomEl.className = `room ${roomData.color} text-white p-2`; 
+                roomEl.dataset.roomKey = key;
+                roomEl.style.left = `${roomData.x}%`;
+                roomEl.style.top = `${roomData.y}%`;
+                roomEl.style.width = `${roomData.w}%`;
+                roomEl.style.height = `${roomData.h}%`;
+                roomEl.innerHTML = `<span>${roomData.name} (${roomData.difficulty.charAt(0).toUpperCase()})</span>`; // Added initial for visual cue
+
+                mapContainer.appendChild(roomEl);
+            });
+        }
+
+        function initializePlayerPosition() {
+            // Set initial position to a neutral path area
+            playerX = 50;
+            playerY = 50;
+            updatePlayerPosition();
+            // Set initial direction to right
+            playerElement.classList.remove('facing-left');
+        }
+
+        function updateMapVisuals(updatedRooms) {
+            updatedRooms.forEach(roomKey => {
+                const roomEl = document.getElementById(`room-${roomKey}`);
+                if (roomEl) {
+                    const roomData = ALL_ROOMS[roomKey];
+                    const roomName = roomData.name;
+                    const difficultyInitial = roomData.difficulty.charAt(0).toUpperCase();
+
+                    if (tasksState[roomKey]) {
+                        roomEl.classList.add('completed');
+                        roomEl.innerHTML = `<span><i class="fas fa-check-circle mr-1"></i> ${roomName}</span>`;
+                    } else {
+                        roomEl.classList.remove('completed');
+                        roomEl.innerHTML = `<span>${roomName} (${difficultyInitial})</span>`;
+                        // Ensure the difficulty class is reapplied if not completed
+                        roomEl.classList.add(roomData.color); 
+                    }
+                }
+            });
+        }
+
+        function updateTaskCounter(count) {
+            document.getElementById('completed-tasks').textContent = count;
+            document.getElementById('total-tasks').textContent = totalTasks;
+
+            if (count === totalTasks) {
+                showCustomMessage("ALL TASKS COMPLETED! YOU ARE THE WINNER!", 'success');
+            }
+        }
+
+        // --- MOVEMENT & COLLISION ---
+
+        /**
+         * Checks if the given percentage coordinates (x, y) are inside any room or path.
+         * This restricts the player to only the designated floor areas.
+         */
+        function isPositionValid(x, y) {
+            // Helper to check if a point (px, py) is inside a rectangle (rx, ry, rw, rh)
+            const isInside = (px, py, rx, ry, rw, rh) => {
+                // Add a small 1% buffer to the path/room boundaries for smoother movement
+                const buffer = 1; 
+                return (
+                    px >= rx - buffer &&
+                    px <= rx + rw + buffer &&
+                    py >= ry - buffer &&
+                    py <= ry + rh + buffer
+                );
+            };
+
+            // 1. Check against PATHS
+            for (const path of PATHS) {
+                if (isInside(x, y, path.x, path.y, path.w, path.h)) {
+                    return true;
+                }
+            }
+
+            // 2. Check against ROOMS
+            for (const key in ALL_ROOMS) {
+                const room = ALL_ROOMS[key];
+                if (isInside(x, y, room.x, room.y, room.w, room.h)) {
+                    return true;
+                }
+            }
+            
+            return false;
+        }
+
+        function updatePlayerPosition() {
+            // Clamp position within 2% to 98% of the map container (Boundary check)
+            playerX = Math.max(2, Math.min(playerX, 98));
+            playerY = Math.max(2, Math.min(playerY, 98));
+
+            playerElement.style.left = `${playerX}%`;
+            playerElement.style.top = `${playerY}%`;
+            // The transform translate(-50%, -50%) is now set in CSS for centering.
+            
+            checkRoomCollision();
+        }
+
+        function handleMovement(event) {
+            if (isModalOpen) return; // Prevent movement while modal is open
+
+            const mapRect = mapContainer.getBoundingClientRect();
+            // Calculate movement step as a percentage based on map size
+            const moveStepX = (MOVEMENT_SPEED / mapRect.width) * 100;
+            const moveStepY = (MOVEMENT_SPEED / mapRect.height) * 100;
+
+            let tempX = playerX;
+            let tempY = playerY;
+
+            switch (event.key) {
+                case 'ArrowUp':
+                case 'w':
+                case 'W':
+                    tempY -= moveStepY;
+                    playerElement.className = '';
+                    playerElement.classList.add('facing-top');
+                    break;
+                case 'ArrowDown':
+                case 's':
+                case 'S':
+                    tempY += moveStepY;
+                    playerElement.className = '';
+                    playerElement.classList.add('facing-bottom');
+                    break;
+                case 'ArrowLeft':
+                case 'a':
+                case 'A':
+                    tempX -= moveStepX;
+                    playerElement.className = '';
+                    playerElement.classList.add('facing-left');
+                    break;
+                case 'ArrowRight':
+                case 'd':
+                case 'D':
+                    tempX += moveStepX;
+                    playerElement.className = '';
+                    playerElement.classList.remove('facing-left');
+                    playerElement.classList.add('facing-right');
+                    break;
+                default:
+                    return; // Ignore other keys
+            }
+            
+            event.preventDefault(); // Stop default browser scrolling
+
+            // Validate the new position before applying
+            if (isPositionValid(tempX, tempY)) {
+                playerX = tempX;
+                playerY = tempY;
+                updatePlayerPosition();
+            }
+            // If the position is invalid, movement is ignored.
+        }
+
+        function checkRoomCollision() {
+            let collidedRoomKey = null;
+
+            // Player position in the map container (0-100)
+            const playerCenter = { x: playerX, y: playerY };
+
+            for (const key in ALL_ROOMS) {
+                const room = ALL_ROOMS[key];
+                // Check if player's center is within the room boundaries
+                const isColliding =
+                    playerCenter.x > room.x &&
+                    playerCenter.x < room.x + room.w &&
+                    playerCenter.y > room.y &&
+                    playerCenter.y < room.y + room.h;
+
+                if (isColliding) {
+                    collidedRoomKey = key;
+                    break;
+                }
+            }
+
+            if (collidedRoomKey && collidedRoomKey !== currentPlayerRoom) {
+                currentPlayerRoom = collidedRoomKey;
+                showTaskModal(collidedRoomKey);
+            } else if (!collidedRoomKey) {
+                currentPlayerRoom = null;
+            }
+        }
+
+        // --- TASK MODAL HANDLERS ---
+
+        function showTaskModal(roomKey) {
+            const roomData = ALL_ROOMS[roomKey];
+            if (tasksState[roomKey]) {
+                // If the task is already complete, we show an informative message and stop.
+                showCustomMessage(`${roomData.name} is already complete! Moving on.`, 'info');
+                return;
+            }
+
+            isModalOpen = true;
+            const modal = document.getElementById('task-modal');
+            const link = document.getElementById('task-link');
+            const submitButton = document.getElementById('submit-code');
+            const codeInput = document.getElementById('completion-code');
+            const messageEl = document.getElementById('modal-message');
+
+            document.getElementById('modal-title').textContent = `Task: ${roomData.name} (${roomData.difficulty.toUpperCase()})`;
+            // Construct the dynamic link for the challenge
+            link.href = `${roomData.link}${roomKey}-challenge`;
+            codeInput.value = ''; // Clear previous input
+            messageEl.textContent = ''; // Clear previous message
+            messageEl.className = 'mt-4 text-center font-bold'; // Reset class
+
+            // Remove and re-add listener to prevent multiple bindings
+            submitButton.onclick = null;
+            submitButton.onclick = () => handleCodeSubmission(roomKey, codeInput.value, messageEl);
+
+            modal.classList.remove('hidden');
+        }
+
+        window.hideTaskModal = function() {
+            isModalOpen = false;
+            document.getElementById('task-modal').classList.add('hidden');
+        }
+
+        function handleCodeSubmission(roomKey, inputCode, messageEl) {
+            const roomData = ALL_ROOMS[roomKey];
+            messageEl.classList.remove('text-red-500', 'text-green-500');
+
+            if (!inputCode) {
+                messageEl.textContent = 'Please enter the unique code.';
+                messageEl.classList.add('text-red-500');
+                return;
+            }
+
+            // Simple check against the hardcoded code
+            if (inputCode.toUpperCase().trim() === roomData.code) {
+                messageEl.textContent = 'Code Accepted! Task Completed.';
+                messageEl.classList.add('text-green-500');
+
+                tasksState[roomKey] = true; // Update local state
+                updateMapVisuals([roomKey]); // Update UI
+                
+                const completedCount = Object.values(tasksState).filter(status => status).length;
+                updateTaskCounter(completedCount); // Recalculate count
+
+                // Automatically close modal after a brief success message
+                setTimeout(hideTaskModal, 1500);
+
+            } else {
+                // Error feedback
+                messageEl.textContent = 'Invalid Code. Please check the code received after completing the task.';
+                messageEl.classList.add('text-red-500');
+            }
+        }
+
+        // --- UTILITIES (Custom Alert) ---
+
+        function showCustomMessage(message, type = 'info') {
+            const box = document.getElementById('message-box');
+            box.textContent = message;
+            box.style.opacity = '1';
+            box.style.pointerEvents = 'auto';
+
+            box.className = 'fixed bottom-4 right-4 p-4 rounded-lg shadow-xl text-center transition-opacity duration-300 z-2000 font-semibold';
+
+            switch (type) {
+                case 'success':
+                    box.classList.add('bg-complete-color', 'text-gray-900');
+                    break;
+                case 'error':
+                    box.classList.add('bg-accent-color', 'text-white');
+                    break;
+                case 'info':
+                default:
+                    box.classList.add('bg-blue-500', 'text-white');
+                    break;
+            }
+
+            setTimeout(() => {
+                box.style.opacity = '0';
+                box.style.pointerEvents = 'none';
+            }, 3000);
+        }
+
+        function setupEventListeners() {
+            document.addEventListener('keydown', handleMovement);
+            // Re-check collision on window resize for responsiveness
+            window.addEventListener('resize', updatePlayerPosition);
+        }
+
+        // --- START APPLICATION ---
+        window.onload = initGame;
+
+    </script>
+</body>
+</html>
